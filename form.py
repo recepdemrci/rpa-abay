@@ -16,8 +16,7 @@ class Form:
     # Get the item id of the excel file in the parent directory in SharePoint
     def get_item_id(self):
         try:
-            parent_item_id = self.sp_parent.get_item_id()
-            items = self.sp_parent.get_children(parent_item_id)
+            items = self.sp_parent.get_children()
             for item in items:
                 if item["name"] == self.excel_name:
                     return item["id"]
@@ -32,7 +31,7 @@ class Form:
     # Download the excel file from the parent directory in SharePoint
     def download(self):
         try:
-            self.sp_parent.download_file(self.sp_item_id, self.excel_name)
+            self.sp_parent.download_file(self.excel_name, self.sp_item_id)
             print(f"Downloaded '{self.excel_name}' successfully.")
         except Exception as e:
             print(f"Error downloading '{self.excel_name}': {e}")
@@ -41,8 +40,7 @@ class Form:
     # Upload the updated excel file back to the parent directory in SharePoint
     def upload(self):
         try:
-            parent_item_id = self.sp_parent.get_item_id()
-            self.sp_parent.upload_file(self.excel_name, parent_item_id)
+            self.sp_parent.upload_file(self.excel_name)
             print(f"Uploaded '{self.excel_name}' successfully.")
         except Exception as e:
             print(f"Error uploading '{self.excel_name}': {e}")

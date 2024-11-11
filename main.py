@@ -1,6 +1,5 @@
 import os
 import time
-import pandas as pd
 from datetime import datetime
 from dotenv import load_dotenv
 
@@ -46,13 +45,11 @@ def main(access_token):
 
             # STEP 3: Download the files from the source Sharepoint
             sp_src = Sharepoint(access_token, row.url)
-            item_id = sp_src.get_item_id()
-            files = sp_src.download(item_id, local_dir)
+            files = sp_src.download(local_dir)
 
             # STEP 4: Upload the files to the destination Sharepoint
             sp_dest = Sharepoint(access_token, SPDIR_SENT)
-            item_id = sp_dest.get_item_id()
-            child_item_id = sp_dest.upload(item_id, local_dir)
+            child_item_id = sp_dest.upload(local_dir)
 
             # STEP 5: Share the destination Sharepoint link with the supplier responsible
             share_url = sp_dest.share(
@@ -60,7 +57,7 @@ def main(access_token):
             )
 
             # STEP 6: Send mail to the supplier responsible
-            # sp_dest.send_email(row, local_dir.split("\\")[-1], files)
+            sp_dest.send_email(row, local_dir.split("\\")[-1], files)
 
             # STEP 7: Update the data list with the share link
             row.share_url = share_url

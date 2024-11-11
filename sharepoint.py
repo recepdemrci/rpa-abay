@@ -14,9 +14,10 @@ class Sharepoint:
         }
         # Initialize site_id and drive_id
         self.sp_url = sp_url
-        hostname, path = self.parse_sharepoint_url()
-        self.site_id = self.get_site_id(hostname, path)
-        self.drive_id = self.get_drive_id(self.site_id)
+        # hostname, path = self.parse_sharepoint_url()
+        self.drive_id = None
+        self.item_id = None
+        self.init_ids()
 
     # Extract the hostname and path from the SharePoint URL
     def parse_sharepoint_url(self):
@@ -32,48 +33,33 @@ class Sharepoint:
         path = unquote(path)
         return hostname, path
 
-    # Get the Site ID from the SharePoint URL
-    def get_site_id(self, hostname, path):
-        # Extract the Site ID
-        api = f"{self.base_url}/sites/{hostname}:/sites/{path}"
-        response = requests.get(api, headers=self.headers, verify=False)
-        if response.status_code >= 400:
-            raise Exception(
-                f"Failed to get Site ID: {response.status_code} {response.text}"
-            )
-
-        site_id = response.json().get("id")
-        return site_id
-
-    # Get the Drive ID from the Site ID
-    def set_id(self, site_id):
-        # Get the Drive ID for the Site
-        api = f"{self.base_url}/sites/{site_id}/drives"
-        response = requests.get(api, headers=self.headers, verify=False)
-        if response.status_code >= 400:
-            raise Exception(
-                f"Failed to get Drive ID: {response.status_code} {response.text}"
-            )
-
-        drives = response.json().get("value", [])
-        return drives[0]["id"]
-
-    # Extract the item ID from the SharePoint URL
-    def get_item_id(self):
+    # Set the Item ID & Drive ID for the SharePoint URL
+    def init_ids(self):
         encoded_url = base64.b64encode(self.sp_url.encode("utf-8")).decode("utf-8")
         encoded_url = encoded_url.replace("/", "_").replace("+", "-").replace("=", "")
+
         api = f"{self.base_url}/shares/u!{encoded_url}/driveItem"
         response = requests.get(api, headers=self.headers, verify=False)
         if response.status_code >= 400:
             raise Exception(
-                f"Failed to get item ID: {response.status_code} {response.text}"
+                f"Failed to set Item ID & Drive ID: {response.status_code} {response.text}"
             )
 
-        item_id = response.json().get("id")
-        return item_id
+        data = response.json()
+        self.drive_id = data["parentReference"]["driveId"]
+        self.item_id = data["id"]
+
+    # Extract the item ID from the SharePoint URL
+    def get_item_id(self):
+        if self.item_id is None:
+            raise Exception("Item ID is not set.")
+        return self.item_id
 
     # Get the list of items (files and folders) from the SharePoint
-    def get_children(self, item_id):
+    def get_children(self, item_id=None):
+        if item_id is None:
+            item_id = self.item_id
+
         api = f"{self.base_url}/drives/{self.drive_id}/items/{item_id}/children"
         response = requests.get(api, headers=self.headers, verify=False)
         if response.status_code >= 400:
@@ -109,7 +95,10 @@ class Sharepoint:
         requests.post(api, headers=self.headers, verify=False)
 
     # Download a file from the sharepoint
-    def download_file(self, item_id, dest_path):
+    def download_file(self, dest_path, item_id=None):
+        if item_id is None:
+            item_id = self.item_id
+
         api = f"{self.base_url}/drives/{self.drive_id}/items/{item_id}/content"
         response = requests.get(api, headers=self.headers, stream=True, verify=False)
         if response.status_code >= 400:
@@ -122,7 +111,10 @@ class Sharepoint:
                 file.write(chunk)
 
     # Download all files from a sharepoint folder, including nested folders
-    def download(self, item_id, dest):
+    def download(self, dest, item_id=None):
+        if item_id is None:
+            item_id = self.item_id
+
         # Get the list of items (files and folders) from the SharePoint or OneDrive URL
         items = self.get_children(item_id)
 
@@ -140,11 +132,11 @@ class Sharepoint:
                 # Recursively call the function to download files from this subfolder
                 sub_dest_dir = os.path.join(dest, item_name)
                 os.makedirs(sub_dest_dir, exist_ok=True)
-                self.download(item_id, sub_dest_dir)
+                self.download(sub_dest_dir, item_id)
             else:
                 # Download the file
                 dest_path = os.path.join(dest, item_name)
-                self.download_file(item_id, dest_path)
+                self.download_file(dest_path, item_id)
 
             # Append the file name and size to the details list
             item_size_mb = (
@@ -157,7 +149,10 @@ class Sharepoint:
         return details
 
     # Upload a file to the sharepoint
-    def upload_file(self, src, item_id):
+    def upload_file(self, src, item_id=None):
+        if item_id is None:
+            item_id = self.item_id
+
         file_name = os.path.basename(src)
         api = f"{self.base_url}/drives/{self.drive_id}/items/{item_id}:/{file_name}:/content?@microsoft.graph.conflictBehavior=replace"
         with open(src, "rb") as file_data:
@@ -170,10 +165,13 @@ class Sharepoint:
                 )
 
     # Recursivelly upload the folder to a SharePoint url
-    def upload(self, item_id, src):
+    def upload(self, src, item_id=None):
+        if item_id is None:
+            item_id = self.item_id
+
         # Create subfolder in SharePoint for each directory
         folder_name = os.path.basename(src)
-        api = f"{self.base_url}/sites/{self.site_id}/drives/{self.drive_id}/items/{item_id}/children"
+        api = f"{self.base_url}/drives/{self.drive_id}/items/{item_id}/children"
         data = {
             "name": folder_name,
             "folder": {},
@@ -196,7 +194,7 @@ class Sharepoint:
                 self.upload_file(item_path, new_item_id)
             # Recursively upload subfolders
             if os.path.isdir(item_path):
-                self.upload(new_item_id, item_path)
+                self.upload(item_path, new_item_id)
 
         print(f"Uploaded '{src}' successfully.")
         return new_item_id
@@ -205,7 +203,7 @@ class Sharepoint:
     # for given item_id to given emails in SharePoint
     def share(self, item_id, emails):
         # Step 1: Create a share link for the item
-        share_api = f"{self.base_url}/sites/{self.site_id}/drives/{self.drive_id}/items/{item_id}/createLink"
+        share_api = f"{self.base_url}/drives/{self.drive_id}/items/{item_id}/createLink"
         data = {
             "type": "view",
             "scope": "users",
@@ -220,7 +218,7 @@ class Sharepoint:
         share_url = response.json()["link"]["webUrl"]
 
         # Step 2: Grant access to a specific user by inviting them
-        invite_api = f"{self.base_url}/sites/{self.site_id}/drives/{self.drive_id}/items/{item_id}/invite"
+        invite_api = f"{self.base_url}/drives/{self.drive_id}/items/{item_id}/invite"
         data = {
             "message": "You have been granted access to the shared folder.",
             "requireSignIn": True,
