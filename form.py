@@ -31,7 +31,7 @@ class Form:
     # Download the excel file from the parent directory in SharePoint
     def download(self):
         try:
-            self.sp_parent.download_file(self.excel_name, self.sp_item_id)
+            self.sp_parent.download(self.excel_name, self.sp_item_id)
             print(f"Downloaded '{self.excel_name}' successfully.")
         except Exception as e:
             print(f"Error downloading '{self.excel_name}': {e}")
@@ -40,7 +40,7 @@ class Form:
     # Upload the updated excel file back to the parent directory in SharePoint
     def upload(self):
         try:
-            self.sp_parent.upload_file(self.excel_name)
+            self.sp_parent.upload(self.excel_name)
             print(f"Uploaded '{self.excel_name}' successfully.")
         except Exception as e:
             print(f"Error uploading '{self.excel_name}': {e}")

@@ -1,4 +1,5 @@
 import os
+import time
 import base64
 import requests
 from urllib.parse import urlparse, unquote
@@ -13,29 +14,13 @@ class Sharepoint:
             "Content-Type": "application/json",
         }
         # Initialize site_id and drive_id
-        self.sp_url = sp_url
-        # hostname, path = self.parse_sharepoint_url()
         self.drive_id = None
         self.item_id = None
-        self.init_ids()
-
-    # Extract the hostname and path from the SharePoint URL
-    def parse_sharepoint_url(self):
-        # Parse the URL to extract components
-        parsed_url = urlparse(self.sp_url)
-        # Hostname (e.g., 'bilisimpark-my.sharepoint.com')
-        hostname = parsed_url.netloc
-        # Extract the folder path after '/s/' (which is the site path)
-        # Decode the URL path (SharePoint encodes special characters)
-        # TODO: Handle more complex SharePoint URLs
-        path = parsed_url.path.split("/s/")[1]
-        path = path.split("/")[0]
-        path = unquote(path)
-        return hostname, path
+        self.init_ids(sp_url)
 
     # Set the Item ID & Drive ID for the SharePoint URL
-    def init_ids(self):
-        encoded_url = base64.b64encode(self.sp_url.encode("utf-8")).decode("utf-8")
+    def init_ids(self, sp_url):
+        encoded_url = base64.b64encode(sp_url.encode("utf-8")).decode("utf-8")
         encoded_url = encoded_url.replace("/", "_").replace("+", "-").replace("=", "")
 
         api = f"{self.base_url}/shares/u!{encoded_url}/driveItem"
@@ -73,7 +58,7 @@ class Sharepoint:
     # Lock the item
     def checkout(self, item_id):
         api = f"{self.base_url}/drives/{self.drive_id}/items/{item_id}/checkout"
-        response = requests.post(api, headers=self.headers, verify=False)
+        response = requests.post(api, headers=self.headers, json={}, verify=False)
         if response.status_code >= 400:
             raise Exception(
                 f"Failed to checkout the item: {response.status_code} {response.text}"
@@ -92,10 +77,14 @@ class Sharepoint:
     # Discard the checkout
     def discard_checkout(self, item_id):
         api = f"{self.base_url}/drives/{self.drive_id}/items/{item_id}/discardCheckout"
-        requests.post(api, headers=self.headers, verify=False)
+        response = requests.post(api, headers=self.headers, json={}, verify=False)
+        if response.status_code >= 400:
+            print(
+                f"Failed to discard the checkout: {response.status_code} {response.text}"
+            )
 
     # Download a file from the sharepoint
-    def download_file(self, dest_path, item_id=None):
+    def download(self, dest_path, item_id=None):
         if item_id is None:
             item_id = self.item_id
 
@@ -110,46 +99,8 @@ class Sharepoint:
             for chunk in response.iter_content(chunk_size=8192):
                 file.write(chunk)
 
-    # Download all files from a sharepoint folder, including nested folders
-    def download(self, dest, item_id=None):
-        if item_id is None:
-            item_id = self.item_id
-
-        # Get the list of items (files and folders) from the SharePoint or OneDrive URL
-        items = self.get_children(item_id)
-
-        # Loop through the items in the sharepoint folder
-        #         If it's a folder, create a corresponding directory and recurse
-        #         If it's a file, download it
-        details = []
-        for item in items:
-            item_id = item["id"]
-            item_name = item["name"]
-            item_size = item.get("size")
-            item_type = item.get("folder")
-
-            if item_type:
-                # Recursively call the function to download files from this subfolder
-                sub_dest_dir = os.path.join(dest, item_name)
-                os.makedirs(sub_dest_dir, exist_ok=True)
-                self.download(sub_dest_dir, item_id)
-            else:
-                # Download the file
-                dest_path = os.path.join(dest, item_name)
-                self.download_file(dest_path, item_id)
-
-            # Append the file name and size to the details list
-            item_size_mb = (
-                f"{item_size / (1024 * 1024):.2f}MB" if item_size is not None else "-"
-            )
-            details.append((item_name, item_size_mb))
-
-        # Return file names and sizes
-        print(f"Downloaded files to '{dest}' successfully.")
-        return details
-
     # Upload a file to the sharepoint
-    def upload_file(self, src, item_id=None):
+    def upload(self, src, item_id=None):
         if item_id is None:
             item_id = self.item_id
 
@@ -164,40 +115,66 @@ class Sharepoint:
                     f"Failed to upload file: {response.status_code}: {response.text}"
                 )
 
-    # Recursivelly upload the folder to a SharePoint url
-    def upload(self, src, item_id=None):
+    # Copy the item to a new location in SharePoint
+    def copy(self, dest_drive_id, dest_parent_id, dest_name, item_id=None):
         if item_id is None:
             item_id = self.item_id
 
-        # Create subfolder in SharePoint for each directory
-        folder_name = os.path.basename(src)
-        api = f"{self.base_url}/drives/{self.drive_id}/items/{item_id}/children"
+        api = f"{self.base_url}/drives/{self.drive_id}/items/{item_id}/copy"
         data = {
-            "name": folder_name,
-            "folder": {},
-            "@microsoft.graph.conflictBehavior": "replace",
+            "parentReference": {"driveId": dest_drive_id, "id": dest_parent_id},
+            "name": dest_name,
         }
         response = requests.post(api, headers=self.headers, json=data, verify=False)
-        if response.status_code >= 400:
+        if response.status_code == 202:
+            location = response.headers.get("Location")
+            return self.monitor_copy(location)
+        else:
             raise Exception(
-                f"Failed to create folder {folder_name}: {response.status_code} {response.text}"
+                f"Failed to copy the item: {response.status_code} {response.text}"
             )
-        # Get the ID of the newly created folder
-        new_item_id = response.json().get("id")
 
-        # Get a list of files and directories in the current directory
-        items = os.listdir(src)
+    # Monitor the copy operation
+    def monitor_copy(self, location):
+        while True:
+            response = requests.get(
+                location,
+                headers={
+                    "Content-Type": "application/json",
+                },
+                verify=False,
+            )
+            if response.status_code >= 400:
+                raise Exception(
+                    f"Failed to monitor the copy operation: {response.status_code} {response.text}"
+                )
+
+            result = response.json()
+            status = result.get("status")
+            if status == "completed":
+                print("Copy operation completed successfully.")
+                return result.get("resourceId")
+            elif status == "failed":
+                raise Exception(f"Copy operation failed: {result.get('error')}")
+            else:
+                # Wait for 5 seconds
+                time.sleep(5)
+
+    # Get the file information from the SharePoint
+    def get_file_details(self, item_id):
+        file_details = []
+        items = self.get_children(item_id)
         for item in items:
-            item_path = os.path.join(src, item)
-            # Upload files into sharepoint
-            if os.path.isfile(item_path):
-                self.upload_file(item_path, new_item_id)
-            # Recursively upload subfolders
-            if os.path.isdir(item_path):
-                self.upload(item_path, new_item_id)
-
-        print(f"Uploaded '{src}' successfully.")
-        return new_item_id
+            if "folder" not in item:
+                # Only include files, not folders
+                file_name = item["name"]
+                file_size = item.get("size", 0)
+                file_size_mb = f"{file_size / (1024 * 1024):.2f}MB"
+                file_details.append((file_name, file_size_mb))
+            else:
+                # Recursively collect details from subfolders
+                file_details.extend(self.get_file_details(item["id"]))
+        return file_details
 
     # Create a share link and give permission
     # for given item_id to given emails in SharePoint

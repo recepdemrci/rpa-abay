@@ -15,16 +15,6 @@ SPDIR_BASE = os.getenv("RPABAY_DATA_MANAGEMENT")
 SPDIR_SENT = os.getenv("RPABAY_DATA_GIDEN")
 LDIR_SENT = os.getenv("RPABAY_DATA_GIDEN_LOCAL")
 
-
-# Create a folder with the current timestamp
-def create_folder(dest_dir, prefix):
-    timestamp = datetime.now().strftime("%Y%m%d%H%M")
-    dest_path = os.path.join(dest_dir, f"{prefix}-{timestamp}")
-    os.makedirs(dest_path, exist_ok=True)
-    print(f"Created folder {prefix}-{timestamp} successfully.")
-    return dest_path
-
-
 def main(access_token):
     try:
         # STEP 1: Download & Read excel file from SharePoint
@@ -40,24 +30,27 @@ def main(access_token):
             print("--------------------------------------------------")
             print(f"Started: {row.sp}, {row.sp_r_email}")
 
-            # STEP 2: Create a dest directory
-            local_dir = create_folder(LDIR_SENT, prefix=row.sp)
+            # STEP 2: Set the destination name on SharePoint
+            timestamp = datetime.now().strftime("%Y%m%d%H%M")
+            dest_name = f"{row.sp}-{timestamp}"
 
-            # STEP 3: Download the files from the source Sharepoint
+            # STEP 3: Initialize the source & destination Sharepoint objects
             sp_src = Sharepoint(access_token, row.url)
-            files = sp_src.download(local_dir)
-
-            # STEP 4: Upload the files to the destination Sharepoint
             sp_dest = Sharepoint(access_token, SPDIR_SENT)
-            child_item_id = sp_dest.upload(local_dir)
+
+            # STEP 4: Copy the source folder to the destination folder in SharePoint
+            dest_item_id = sp_src.copy(
+                sp_dest.drive_id, sp_dest.item_id, dest_name
+            )
 
             # STEP 5: Share the destination Sharepoint link with the supplier responsible
             share_url = sp_dest.share(
-                child_item_id, [row.sp_r_email, row.r_email, *row.r_cc_email]
+                dest_item_id, [row.sp_r_email, row.r_email, *row.r_cc_email]
             )
 
             # STEP 6: Send mail to the supplier responsible
-            sp_dest.send_email(row, local_dir.split("\\")[-1], files)
+            files = sp_dest.get_file_details(dest_item_id)
+            sp_dest.send_email(row, dest_name, files)
 
             # STEP 7: Update the data list with the share link
             row.share_url = share_url
