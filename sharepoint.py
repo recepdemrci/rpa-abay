@@ -1,8 +1,7 @@
-import os
 import time
+import json
 import base64
 import requests
-from urllib.parse import urlparse, unquote
 
 
 # TODO: Remove the verify: False from the requests
@@ -54,66 +53,6 @@ class Sharepoint:
 
         items = response.json().get("value", [])
         return items
-
-    # Lock the item
-    def checkout(self, item_id):
-        api = f"{self.base_url}/drives/{self.drive_id}/items/{item_id}/checkout"
-        response = requests.post(api, headers=self.headers, json={}, verify=False)
-        if response.status_code >= 400:
-            raise Exception(
-                f"Failed to checkout the item: {response.status_code} {response.text}"
-            )
-
-    # Checkin the item
-    def checkin(self, item_id):
-        api = f"{self.base_url}/drives/{self.drive_id}/items/{item_id}/checkin"
-        data = {"comment": "RPABAY: Dosya paylaşımı tamamlandı."}
-        response = requests.post(api, headers=self.headers, json=data, verify=False)
-        if response.status_code >= 400:
-            raise Exception(
-                f"Failed to checkin the item: {response.status_code} {response.text}"
-            )
-
-    # Discard the checkout
-    def discard_checkout(self, item_id):
-        api = f"{self.base_url}/drives/{self.drive_id}/items/{item_id}/discardCheckout"
-        response = requests.post(api, headers=self.headers, json={}, verify=False)
-        if response.status_code >= 400:
-            print(
-                f"Failed to discard the checkout: {response.status_code} {response.text}"
-            )
-
-    # Download a file from the sharepoint
-    def download(self, dest_path, item_id=None):
-        if item_id is None:
-            item_id = self.item_id
-
-        api = f"{self.base_url}/drives/{self.drive_id}/items/{item_id}/content"
-        response = requests.get(api, headers=self.headers, stream=True, verify=False)
-        if response.status_code >= 400:
-            raise Exception(
-                f"Failed to download the file: {response.status_code} {response.text}"
-            )
-        # Save to destination path
-        with open(dest_path, "wb") as file:
-            for chunk in response.iter_content(chunk_size=8192):
-                file.write(chunk)
-
-    # Upload a file to the sharepoint
-    def upload(self, src, item_id=None):
-        if item_id is None:
-            item_id = self.item_id
-
-        file_name = os.path.basename(src)
-        api = f"{self.base_url}/drives/{self.drive_id}/items/{item_id}:/{file_name}:/content?@microsoft.graph.conflictBehavior=replace"
-        with open(src, "rb") as file_data:
-            response = requests.put(
-                api, headers=self.headers, data=file_data, verify=False
-            )
-            if response.status_code >= 400:
-                raise Exception(
-                    f"Failed to upload file: {response.status_code}: {response.text}"
-                )
 
     # Copy the item to a new location in SharePoint
     def copy(self, dest_drive_id, dest_parent_id, dest_name, item_id=None):
@@ -256,3 +195,32 @@ class Sharepoint:
                 f"Failed to send email: {response.status_code}, {response.text}"
             )
         print(f"Sent email {data.sp_r_email} successfully.")
+
+    # Read the data from the excel file
+    def excel_read(self, item_id, sheet_name, start_row):
+        api = f"{self.base_url}/drives/{self.drive_id}/items/{item_id}/workbook/worksheets('{sheet_name}')/usedRange"
+        response = requests.get(api, headers=self.headers)
+        if response.status_code >= 400:
+            raise Exception(
+                f"Failed to read the excel file: {response.status_code} {response.text}"
+            )
+
+        # Get the rows from the start_row
+        rows = response.json()
+        rows = rows["values"][start_row - 2 :] if rows["values"] is not None else []
+        # Filter the non-empty rows
+        filtered_rows = []
+        for idx, row in enumerate(rows, start=start_row):
+            if any(cell for cell in row):
+                filtered_rows.append((idx, row))
+        return filtered_rows
+
+    # Write the data to the excel file
+    def excel_write_row(self, item_id, sheet_name, row_idx, col_start, col_end, values):
+        api = f"{self.base_url}/drives/{self.drive_id}/items/{item_id}/workbook/worksheets('{sheet_name}')/range(address='{col_start}{row_idx}:{col_end}{row_idx}')"
+        data = {"values": values}
+        response = requests.patch(api, headers=self.headers, data=json.dumps(data))
+        if response.status_code >= 400:
+            raise Exception(
+                f"Failed to write to the excel file: {response.status_code} {response.text}"
+            )

@@ -11,9 +11,10 @@ from auth import get_access_token
 load_dotenv()
 FREQUENCY = int(os.getenv("FREQUENCY"))
 EXCEL_NAME = os.getenv("RPABAY_DATA_MANAGEMENT_REQUEST_FORM")
+SHEET_NAME = os.getenv("RPABAY_DATA_MANAGEMENT_REQUEST_FORM_SHEET")
 SPDIR_BASE = os.getenv("RPABAY_DATA_MANAGEMENT")
 SPDIR_SENT = os.getenv("RPABAY_DATA_GIDEN")
-LDIR_SENT = os.getenv("RPABAY_DATA_GIDEN_LOCAL")
+
 
 def main(access_token):
     try:
@@ -21,9 +22,7 @@ def main(access_token):
         request_form = Form(
             access_token, spdir_parent=SPDIR_BASE, excel_name=EXCEL_NAME
         )
-        request_form.lock()
-        request_form.download()
-        request_form.read()
+        request_form.read(SHEET_NAME)
 
         # TODO: Implement the loop error handling
         for index, (row_idx, row) in enumerate(request_form.rows):
@@ -39,9 +38,7 @@ def main(access_token):
             sp_dest = Sharepoint(access_token, SPDIR_SENT)
 
             # STEP 4: Copy the source folder to the destination folder in SharePoint
-            dest_item_id = sp_src.copy(
-                sp_dest.drive_id, sp_dest.item_id, dest_name
-            )
+            dest_item_id = sp_src.copy(sp_dest.drive_id, sp_dest.item_id, dest_name)
 
             # STEP 5: Share the destination Sharepoint link with the supplier responsible
             share_url = sp_dest.share(
@@ -62,13 +59,9 @@ def main(access_token):
             print("--------------------------------------------------")
 
         # STEP 7: Write & Upload the updated excel file to SharePoint
-        request_form.write()
-        request_form.upload()
-        request_form.unlock()
+        request_form.write(SHEET_NAME)
 
     except Exception as e:
-        if request_form:
-            request_form.unlock(discard=True)
         print(f"[ERROR]: {e}")
 
 

@@ -1,33 +1,27 @@
 class Model:
-    def __init__(self, sheet, row_idx):
+    def __init__(self, row):
         # Project detail
-        self.oem = sheet[f"B{row_idx}"].value
-        self.project = sheet[f"C{row_idx}"].value
-        self.system = sheet[f"D{row_idx}"].value
-        self.partname = sheet[f"E{row_idx}"].value
-        self.partno = sheet[f"F{row_idx}"].value
+        self.oem = row[0]
+        self.project = row[1]
+        self.system = row[2]
+        self.partname = row[3]
+        self.partno = row[4]
         # Link to share with supplier
-        self.url = (
-            sheet[f"I{row_idx}"].hyperlink.target
-            if sheet[f"I{row_idx}"].hyperlink
-            else sheet[f"I{row_idx}"].value
-        )
+        self.url = row[7]
         # Responsible - Farplas
-        self.r = sheet[f"K{row_idx}"].value
-        self.r_email = sheet[f"L{row_idx}"].value
-        self.r_cc_email = (
-            sheet[f"M{row_idx}"].value.split(";") if sheet[f"M{row_idx}"].value else []
-        )
+        self.r = row[9]
+        self.r_email = row[10]
+        self.r_cc_email = row[11].split(";") if row[11] else []
         # Mail detail
-        self.subject = sheet[f"Q{row_idx}"].value
-        self.comment = sheet[f"R{row_idx}"].value
+        self.subject = row[15]
+        self.comment = row[16]
         # Responsible - Supplier
-        self.sp = sheet[f"P{row_idx}"].value
-        self.sp_r = sheet[f"S{row_idx}"].value
-        self.sp_r_email = sheet[f"T{row_idx}"].value
+        self.sp = row[14]
+        self.sp_r = row[17]
+        self.sp_r_email = row[18]
         # Flag for send
-        self.send = sheet[f"U{row_idx}"].value
+        self.send = row[19]
         # Share that will be filled by script
-        self.share_url = sheet[f"V{row_idx}"].value
-        self.share_date = sheet[f"W{row_idx}"].value
-        self.share_status = sheet[f"X{row_idx}"].value
+        self.share_url = row[20]
+        self.share_date = row[21]
+        self.share_status = row[22]

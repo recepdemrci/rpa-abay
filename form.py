@@ -1,6 +1,3 @@
-from datetime import datetime
-from openpyxl import load_workbook
-
 from model import Model
 from sharepoint import Sharepoint
 
@@ -28,77 +25,35 @@ class Form:
             print(f"Error getting item id of '{self.excel_name}': {e}")
             raise
 
-    # Download the excel file from the parent directory in SharePoint
-    def download(self):
+    # Read the data from the excel file in SharePoint
+    def read(self, sheet_name):
         try:
-            self.sp_parent.download(self.excel_name, self.sp_item_id)
-            print(f"Downloaded '{self.excel_name}' successfully.")
-        except Exception as e:
-            print(f"Error downloading '{self.excel_name}': {e}")
-            raise
-
-    # Upload the updated excel file back to the parent directory in SharePoint
-    def upload(self):
-        try:
-            self.sp_parent.upload(self.excel_name)
-            print(f"Uploaded '{self.excel_name}' successfully.")
-        except Exception as e:
-            print(f"Error uploading '{self.excel_name}': {e}")
-            raise
-
-    # Load the workbook and read the data from the excel file to rows
-    def read(self):
-        try:
-            wb = load_workbook(self.excel_name)
-            sheet = wb.active
-            for row_idx in range(6, sheet.max_row + 1):
-                row = Model(sheet, row_idx)
-                # Append data to list if already processed
+            rows = self.sp_parent.excel_read(self.sp_item_id, sheet_name, start_row=6)
+            for idx, item in rows:
+                row = Model(item)
                 if row.send == "Gönder." and not row.share_status == "Gönderildi.":
-                    self.rows.append((row_idx, row))
+                    self.rows.append((idx, row))
             print(f"Read '{self.excel_name}' successfully.")
             return self.rows
         except Exception as e:
             print(f"Error reading '{self.excel_name}': {e}")
             raise
-        finally:
-            wb.close()
 
-    # Write the updated rows to the excel file
-    def write(self):
+    # Write the updated rows to the excel file in SharePoint
+    def write(self, sheet_name):
         try:
-            wb = load_workbook(self.excel_name)
-            sheet = wb.active
-            for row_idx, row in self.rows:
+            for idx, row in self.rows:
                 if row.share_status == "Gönderildi.":
-                    sheet[f"V{row_idx}"] = row.share_url
-                    sheet[f"W{row_idx}"] = row.share_date
-                    sheet[f"X{row_idx}"] = row.share_status
-            wb.save(self.excel_name)
+                    values = [[row.share_url, row.share_date, row.share_status]]
+                    self.sp_parent.excel_write_row(
+                        self.sp_item_id,
+                        sheet_name,
+                        row_idx=idx,
+                        col_start="V",
+                        col_end="X",
+                        values=values,
+                    )
             print(f"Updated '{self.excel_name}' successfully.")
         except Exception as e:
             print(f"Error writing to '{self.excel_name}': {e}")
-            raise
-        finally:
-            wb.close()
-
-    # Lock the excel file to prevent further editing
-    def lock(self):
-        try:
-            self.sp_parent.checkout(self.sp_item_id)
-            print(f"Locked '{self.excel_name}' successfully.")
-        except Exception as e:
-            print(f"Error locking '{self.excel_name}': {e}")
-            raise
-
-    # Unlock the excel file to allow editing
-    def unlock(self, discard=False):
-        try:
-            if discard:
-                self.sp_parent.discard_checkout(self.sp_item_id)
-            else:
-                self.sp_parent.checkin(self.sp_item_id)
-            print(f"Unlocked '{self.excel_name}' successfully.")
-        except Exception as e:
-            print(f"Error unlocking '{self.excel_name}': {e}")
             raise
