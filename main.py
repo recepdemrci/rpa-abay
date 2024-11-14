@@ -41,24 +41,27 @@ def main(access_token):
                 if row.error:
                     raise Exception(row.error)
 
-                # STEP 2: Set the destination name on SharePoint
-                timestamp = datetime.now().strftime("%Y%m%d%H%M")
-                dest_name = f"{row.sp}-{timestamp}"
-
-                # STEP 3: Initialize the source & destination Sharepoint objects
+                # STEP 2: Initialize the source & destination Sharepoint objects
                 sp_src = Sharepoint(access_token, row.url, verify=False)
                 sp_dest = Sharepoint(access_token, SPDIR_SENT, verify=False)
 
-                # STEP 4: Copy the source folder to the destination folder in SharePoint
-                dest_item_id = sp_src.copy(sp_dest.drive_id, sp_dest.item_id, dest_name)
+                # STEP 3: Copy the source folder to the destination in Sharepoint
+                timestamp = datetime.now().strftime("%Y%m%d%H%M")
+                dest_name = f"{timestamp}_{row.oem}_{row.project}_{row.partname}"
+                dest_item_id = sp_src.copy(
+                    sp_dest.drive_id,
+                    sp_dest.item_id,
+                    company=row.sp,
+                    dest_name=dest_name,
+                )
 
-                # STEP 5: Share the destination Sharepoint link with the supplier responsible
+                # STEP 4: Share the destination Sharepoint link with the supplier responsible
                 share_url = sp_dest.share(
                     dest_item_id, [row.sp_r_email, row.r_email, *row.r_cc_email]
                 )
                 row.share_url = share_url
 
-                # STEP 6: Send mail to the supplier responsible
+                # STEP 5: Send mail to the supplier responsible
                 files = sp_dest.get_file_details(dest_item_id)
                 sp_dest.send_email(row, dest_name, files)
 
@@ -76,7 +79,7 @@ def main(access_token):
                 row.share_date = datetime.now().strftime("%d.%m.%Y")
                 request_form.rows[index] = (idx, row)
 
-        # STEP 7: Write the updated rows to SharePoint
+        # STEP 6: Write the updated rows to SharePoint
         request_form.write(SHEET_NAME)
 
     except Exception as e:

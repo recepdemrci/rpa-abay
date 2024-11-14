@@ -57,14 +57,27 @@ class Sharepoint:
         items = response.json().get("value", [])
         return items
 
+    # Find the item ID from a given directory in SharePoint
+    def find_dir(self, parent_id, dir_name):
+        items = self.get_children(parent_id)
+        for item in items:
+            if item.get("folder") and item["name"] == dir_name:
+                return item["id"]
+        logging.error(f"Directory not found: {dir_name} in SharePoint.")
+        raise Exception(f"Company directory {dir_name} NOT found in SharePoint.")
+
     # Copy the item to a new location in SharePoint
-    def copy(self, dest_drive_id, dest_parent_id, dest_name, item_id=None):
+    def copy(self, dest_drive_id, dest_parent_id, company, dest_name, item_id=None):
         if item_id is None:
             item_id = self.item_id
 
+        # Search for the destination directory in parent directory in SharePoint
+        dest_id = self.find_dir(dest_parent_id, company)
+
+        # Copy the item to the destination directory
         api = f"{self.base_url}/drives/{self.drive_id}/items/{item_id}/copy"
         data = {
-            "parentReference": {"driveId": dest_drive_id, "id": dest_parent_id},
+            "parentReference": {"driveId": dest_drive_id, "id": dest_id},
             "name": dest_name,
         }
         response = requests.post(
