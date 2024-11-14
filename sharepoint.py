@@ -1,17 +1,18 @@
 import time
 import json
 import base64
+import logging
 import requests
 
 
-# TODO: Remove the verify: False from the requests
 class Sharepoint:
-    def __init__(self, access_token, sp_url):
+    def __init__(self, access_token, sp_url, verify=True):
         self.base_url = "https://graph.microsoft.com/v1.0"
         self.headers = {
             "Authorization": f"Bearer {access_token}",
             "Content-Type": "application/json",
         }
+        self.verify = verify
         # Initialize site_id and drive_id
         self.drive_id = None
         self.item_id = None
@@ -23,11 +24,12 @@ class Sharepoint:
         encoded_url = encoded_url.replace("/", "_").replace("+", "-").replace("=", "")
 
         api = f"{self.base_url}/shares/u!{encoded_url}/driveItem"
-        response = requests.get(api, headers=self.headers, verify=False)
+        response = requests.get(api, headers=self.headers, verify=self.verify)
         if response.status_code >= 400:
-            raise Exception(
-                f"Failed to set Item ID & Drive ID: {response.status_code} {response.text}"
+            logging.error(
+                f"Init ItemID & DriveID failed. {response.status_code} {response.text}"
             )
+            raise Exception("SharePoint Data Link is invalid.")
 
         data = response.json()
         self.drive_id = data["parentReference"]["driveId"]
@@ -36,7 +38,7 @@ class Sharepoint:
     # Extract the item ID from the SharePoint URL
     def get_item_id(self):
         if self.item_id is None:
-            raise Exception("Item ID is not set.")
+            raise Exception("Item ID is not initialized.")
         return self.item_id
 
     # Get the list of items (files and folders) from the SharePoint
@@ -45,11 +47,12 @@ class Sharepoint:
             item_id = self.item_id
 
         api = f"{self.base_url}/drives/{self.drive_id}/items/{item_id}/children"
-        response = requests.get(api, headers=self.headers, verify=False)
+        response = requests.get(api, headers=self.headers, verify=self.verify)
         if response.status_code >= 400:
-            raise Exception(
-                f"Failed to get the list of files: {response.status_code} {response.text}"
+            logging.error(
+                f"Get children failed. {response.status_code} {response.text}"
             )
+            raise Exception("Failed to get children from SharePoint.")
 
         items = response.json().get("value", [])
         return items
@@ -64,14 +67,15 @@ class Sharepoint:
             "parentReference": {"driveId": dest_drive_id, "id": dest_parent_id},
             "name": dest_name,
         }
-        response = requests.post(api, headers=self.headers, json=data, verify=False)
+        response = requests.post(
+            api, headers=self.headers, json=data, verify=self.verify
+        )
         if response.status_code == 202:
             location = response.headers.get("Location")
             return self.monitor_copy(location)
         else:
-            raise Exception(
-                f"Failed to copy the item: {response.status_code} {response.text}"
-            )
+            logging.error(f"Copy failed. {response.status_code} {response.text}")
+            raise Exception("SharePoint copy operation failed.")
 
     # Monitor the copy operation
     def monitor_copy(self, location):
@@ -81,20 +85,22 @@ class Sharepoint:
                 headers={
                     "Content-Type": "application/json",
                 },
-                verify=False,
+                verify=self.verify,
             )
             if response.status_code >= 400:
-                raise Exception(
-                    f"Failed to monitor the copy operation: {response.status_code} {response.text}"
+                logging.error(
+                    f"Monitor copy failed. {response.status_code} {response.text}"
                 )
+                raise Exception("SharePoint copy operation failed.")
 
             result = response.json()
             status = result.get("status")
             if status == "completed":
-                print("Copy operation completed successfully.")
+                logging.info("Copy operation successful.")
                 return result.get("resourceId")
             elif status == "failed":
-                raise Exception(f"Copy operation failed: {result.get('error')}")
+                logging.error(f"Copy operation failed: {result.get('error')}")
+                raise Exception("SharePoint copy operation failed.")
             else:
                 # Wait for 5 seconds
                 time.sleep(5)
@@ -118,22 +124,23 @@ class Sharepoint:
     # Create a share link and give permission
     # for given item_id to given emails in SharePoint
     def share(self, item_id, emails):
-        # Step 1: Create a share link for the item
+        # Create a share link for the item
         share_api = f"{self.base_url}/drives/{self.drive_id}/items/{item_id}/createLink"
         data = {
             "type": "view",
             "scope": "users",
         }
         response = requests.post(
-            share_api, headers=self.headers, json=data, verify=False
+            share_api, headers=self.headers, json=data, verify=self.verify
         )
         if response.status_code >= 400:
-            raise Exception(
-                f"Failed to create share link: {response.status_code} {response.text}"
+            logging.error(
+                f"Create share link failed. {response.status_code} {response.text}"
             )
+            raise Exception("Failed to create share link in SharePoint.")
         share_url = response.json()["link"]["webUrl"]
 
-        # Step 2: Grant access to a specific user by inviting them
+        # Grant access to a specific user by inviting them
         invite_api = f"{self.base_url}/drives/{self.drive_id}/items/{item_id}/invite"
         data = {
             "message": "You have been granted access to the shared folder.",
@@ -143,18 +150,17 @@ class Sharepoint:
             "recipients": [{"email": email} for email in emails],
         }
         response = requests.post(
-            invite_api, headers=self.headers, json=data, verify=False
+            invite_api, headers=self.headers, json=data, verify=self.verify
         )
         if response.status_code >= 400:
-            raise Exception(
-                f"Failed to invite user: {response.status_code} {response.text}"
-            )
+            logging.error(f"Invite user failed. {response.status_code} {response.text}")
+            raise Exception("Failed to create share link in SharePoint.")
 
-        print(f"Created share link {share_url} successfully.")
+        logging.info(f"Share link created successfully: {share_url}")
         return share_url
 
     # Send an email
-    def send_email(self, data, dirname, files):
+    def send_email(self, data, dest_name, files):
         # Generate the file listing with names and sizes
         file_list = ""
         for idx, (name, size) in enumerate(files, start=1):
@@ -168,13 +174,13 @@ class Sharepoint:
                     "contentType": "HTML",
                     "content": f"""
                     <p>Merhaba {data.sp_r},</p>
-                    <p>Aşağıdaki linkte, {data.sp} Firması için Farplas A.Ş tarafından {dirname} dosyası erişiminize açılmıştır.</p>
+                    <p>Aşağıdaki linkte, {data.sp} Firması için Farplas A.Ş tarafından {dest_name} dosyası erişiminize açılmıştır.</p>
                     <p><b>OEM:</b> {data.oem}</p>
                     <p><b>Project:</b> {data.project}</p>
                     <p><b>System:</b> {data.system}</p>
                     <p><b>Part Name:</b> {data.partname}</p>
                     <p><b>Part Number:</b> {data.partno}</p>
-                    <p><b>Link:</b><br><a href="{data.share_url}">{dirname}</a></p>
+                    <p><b>Link:</b><br><a href="{data.share_url}">{dest_name}</a></p>
                     <p><b>Dosya içeriği:</b><br>{file_list}</p>
                     <p><b>Yorum / Talep:</b></p>
                     <p><b>{data.comment}</b></p>
@@ -189,21 +195,23 @@ class Sharepoint:
         }
         # Send the email
         api = f"{self.base_url}/me/sendMail"
-        response = requests.post(api, headers=self.headers, json=message, verify=False)
+        response = requests.post(
+            api, headers=self.headers, json=message, verify=self.verify
+        )
         if response.status_code >= 400:
-            raise Exception(
-                f"Failed to send email: {response.status_code}, {response.text}"
-            )
-        print(f"Sent email {data.sp_r_email} successfully.")
+            logging.error(f"Send email failed. {response.status_code} {response.text}")
+            raise Exception("Failed to send email.")
+        logging.info(f"Send email to {data.sp_r_email} successfully.")
 
     # Read the data from the excel file
     def excel_read(self, item_id, sheet_name, start_row):
         api = f"{self.base_url}/drives/{self.drive_id}/items/{item_id}/workbook/worksheets('{sheet_name}')/usedRange"
         response = requests.get(api, headers=self.headers)
         if response.status_code >= 400:
-            raise Exception(
-                f"Failed to read the excel file: {response.status_code} {response.text}"
+            logging.error(
+                f"Read excel file failed. {response.status_code} {response.text}"
             )
+            raise Exception("Failed to read the excel file from SharePoint.")
 
         # Get the rows from the start_row
         rows = response.json()
@@ -221,6 +229,7 @@ class Sharepoint:
         data = {"values": values}
         response = requests.patch(api, headers=self.headers, data=json.dumps(data))
         if response.status_code >= 400:
-            raise Exception(
-                f"Failed to write to the excel file: {response.status_code} {response.text}"
+            logging.error(
+                f"Write excel file failed. {response.status_code} {response.text}"
             )
+            raise Exception("Failed to write the excel file to SharePoint.")
