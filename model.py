@@ -11,7 +11,7 @@ class Model:
         self.partno = row[4]
         # Link to share with supplier
         self.url = row[7]
-        # Responsible - Farplas
+        # Responsible - Company
         self.r = row[9]
         self.r_email = row[10]
         self.r_cc_email = row[11].split(";") if row[11] else []

@@ -182,12 +182,12 @@ class Sharepoint:
         # Message content
         message = {
             "message": {
-                "subject": f"FARPLAS_RPABAY_DATA_PAYLASIMI_{data.sp}_{data.subject}",
+                "subject": f"RPABAY_DATA_PAYLASIMI_{data.sp}_{data.subject}",
                 "body": {
                     "contentType": "HTML",
                     "content": f"""
                     <p>Merhaba {data.sp_r},</p>
-                    <p>Aşağıdaki linkte, {data.sp} Firması için Farplas A.Ş tarafından {dest_name} dosyası erişiminize açılmıştır.</p>
+                    <p>Aşağıdaki linkte, {data.sp} Firması için ... A.Ş tarafından {dest_name} dosyası erişiminize açılmıştır.</p>
                     <p><b>OEM:</b> {data.oem}</p>
                     <p><b>Project:</b> {data.project}</p>
                     <p><b>System:</b> {data.system}</p>
@@ -197,7 +197,7 @@ class Sharepoint:
                     <p><b>Dosya içeriği:</b><br>{file_list}</p>
                     <p><b>Yorum / Talep:</b></p>
                     <p><b>{data.comment}</b></p>
-                    <p><b>Farplas Sorumlusu:</b> {data.r}</p>
+                    <p><b>Firma Sorumlusu:</b> {data.r}</p>
                     <p>İyi çalışmalar.</p>
                     """,
                 },
